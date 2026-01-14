@@ -1,0 +1,29 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--  Test attribute line breaks preservation  -->
+    <StackPanel>
+        <!--  All attributes on same line  -->
+        <Button Content="Button1" Width="100" Height="30" Background="Blue" />
+
+        <!--  Attributes on separate lines  -->
+        <Button
+            Content="Button2"
+            Width="100"
+            Height="30"
+            Background="Red" />
+
+        <!--  Mixed: some on same line, some separate  -->
+        <TextBlock Text="Sample" FontSize="14"
+            FontWeight="Bold"
+            Foreground="Green" />
+
+        <!--  First attribute on same line as element  -->
+        <CheckBox Content="Option1"
+            IsChecked="True" />
+
+        <!--  First attribute on separate line  -->
+        <CheckBox
+            Content="Option2"
+            IsChecked="False" />
+    </StackPanel>
+</Window>
