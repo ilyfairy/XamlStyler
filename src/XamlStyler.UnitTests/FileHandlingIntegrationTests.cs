@@ -490,6 +490,26 @@ namespace Xavalon.XamlStyler.UnitTests
             FileHandlingIntegrationTests.DoTest(stylerOptions);
         }
 
+        [Test]
+        public void TestKeepOriginalElementFormat()
+        {
+            var stylerOptions = new StylerOptions()
+            {
+                KeepOriginalElementFormat = true,
+            };
+            FileHandlingIntegrationTests.DoTest(stylerOptions);
+        }
+
+        [Test]
+        public void TestKeepOriginalAttributeLineBreaks()
+        {
+            var stylerOptions = new StylerOptions()
+            {
+                KeepOriginalAttributeLineBreaks = true,
+            };
+            FileHandlingIntegrationTests.DoTest(stylerOptions);
+        }
+
         private static void DoTest(
             StylerOptions stylerOptions,
             [System.Runtime.CompilerServices.CallerMemberName] string callerMemberName = "")

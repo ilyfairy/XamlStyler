@@ -191,6 +191,18 @@
   <None Update="TestFiles\TestKeepSelectAttributesOnFirstLine.testxaml">
     <CopyToOutputDirectory>Always</CopyToOutputDirectory>
   </None>
+  <None Update="TestFiles\TestKeepOriginalElementFormat.expected">
+    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+  </None>
+  <None Update="TestFiles\TestKeepOriginalElementFormat.testxaml">
+    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+  </None>
+  <None Update="TestFiles\TestKeepOriginalAttributeLineBreaks.expected">
+    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+  </None>
+  <None Update="TestFiles\TestKeepOriginalAttributeLineBreaks.testxaml">
+    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+  </None>
   <None Update="TestFiles\TestMarkupExtensionHandling.testxaml">
     <CopyToOutputDirectory>Always</CopyToOutputDirectory>
   </None>
