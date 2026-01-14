@@ -37,5 +37,10 @@ namespace Xavalon.XamlStyler.Parser
         /// Access to parent element
         /// </summary>
         public ElementProcessStatus Parent { get; set; }
+
+        /// <summary>
+        /// Gets or sets the original format info for this element.
+        /// </summary>
+        public OriginalFormatInfo OriginalFormatInfo { get; set; }
     }
 }

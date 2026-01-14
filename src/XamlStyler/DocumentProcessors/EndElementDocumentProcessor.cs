@@ -1,4 +1,4 @@
-// (c) Xavalon. All rights reserved.
+﻿// (c) Xavalon. All rights reserved.
 
 using System;
 using System.Text;
@@ -35,10 +35,12 @@ namespace Xavalon.XamlStyler.DocumentProcessors
                 output.Append("</").Append(xmlReader.Name).Append(">");
             }
             else if ((elementProcessContext.Current.ContentType == ContentTypes.None)
-                && this.options.RemoveEndingTagOfEmptyElement)
+                && this.options.RemoveEndingTagOfEmptyElement
+                && !this.options.KeepOriginalElementFormat)
             {
                 // Shrink the current element, if it has no content.
                 // E.g., <Element>  </Element> => <Element />
+                // Skip this if KeepOriginalElementFormat is enabled to preserve the original style.
                 output = output.TrimEnd(' ', '\t', '\r', '\n');
 
                 int bracketIndex = output.LastIndexOf('>');
@@ -50,6 +52,14 @@ namespace Xavalon.XamlStyler.DocumentProcessors
                 {
                     output.Insert(bracketIndex, ' ');
                 }
+            }
+            else if ((elementProcessContext.Current.ContentType == ContentTypes.None)
+                && this.options.KeepOriginalElementFormat)
+            {
+                // Keep original element format: preserve the end tag for elements that originally had end tags.
+                // E.g., <Element></Element> stays as <Element></Element>
+                output = output.TrimEnd(' ', '\t', '\r', '\n');
+                output.Append("</").Append(xmlReader.Name).Append(">");
             }
             else if ((elementProcessContext.Current.ContentType == ContentTypes.SingleLineTextOnly)
                 && !elementProcessContext.Current.IsMultlineStartTag)

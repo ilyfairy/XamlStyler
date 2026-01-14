@@ -1,4 +1,4 @@
-// (c) Xavalon. All rights reserved.
+﻿// (c) Xavalon. All rights reserved.
 
 using System;
 using System.Collections.Generic;
@@ -51,6 +51,14 @@ namespace Xavalon.XamlStyler.DocumentProcessors
             elementProcessContext.UpdateParentElementProcessStatus(ContentTypes.Mixed);
 
             var elementName = xmlReader.Name;
+
+            // Get original format info if available
+            OriginalFormatInfo originalFormatInfo = null;
+            if (elementProcessContext.OriginalFormatParser != null)
+            {
+                originalFormatInfo = elementProcessContext.OriginalFormatParser.GetNextFormatInfo(elementName);
+            }
+
             elementProcessContext.Push(
                 new ElementProcessStatus
                 {
@@ -58,7 +66,8 @@ namespace Xavalon.XamlStyler.DocumentProcessors
                     Name = elementName,
                     ContentType = ContentTypes.None,
                     IsMultlineStartTag = false,
-                    IsPreservingSpace = elementProcessContext.Current.IsPreservingSpace
+                    IsPreservingSpace = elementProcessContext.Current.IsPreservingSpace,
+                    OriginalFormatInfo = originalFormatInfo
                 });
 
             var currentIndentString = this.indentService.GetIndentString(xmlReader.Depth);
@@ -105,7 +114,8 @@ namespace Xavalon.XamlStyler.DocumentProcessors
                     output,
                     elementProcessContext,
                     isNoLineBreakElement,
-                    attributeIndetationString);
+                    attributeIndetationString,
+                    originalFormatInfo);
             }
 
             // Determine if to put ending bracket on new line.
@@ -141,7 +151,8 @@ namespace Xavalon.XamlStyler.DocumentProcessors
             StringBuilder output,
             ElementProcessContext elementProcessContext,
             bool isNoLineBreakElement,
-            string attributeIndentationString)
+            string attributeIndentationString,
+            OriginalFormatInfo originalFormatInfo)
         {
             var list = new List<AttributeInfo>(xmlReader.AttributeCount);
             var firstLineList = new List<AttributeInfo>(xmlReader.AttributeCount);
@@ -163,6 +174,13 @@ namespace Xavalon.XamlStyler.DocumentProcessors
                 {
                     elementProcessContext.Current.IsPreservingSpace = (xmlReader.Value == "preserve");
                 }
+            }
+
+            // If KeepOriginalAttributeLineBreaks is enabled and we have original format info, use it
+            if (this.options.KeepOriginalAttributeLineBreaks && originalFormatInfo != null)
+            {
+                this.ProcessAttributesWithOriginalLineBreaks(output, elementProcessContext, list, attributeIndentationString, originalFormatInfo);
+                return;
             }
 
             if (this.options.EnableAttributeReordering)
@@ -376,6 +394,40 @@ namespace Xavalon.XamlStyler.DocumentProcessors
         private bool IsNoLineBreakElement(string elementName)
         {
             return this.noNewLineElementsList.Contains(elementName);
+        }
+
+        /// <summary>
+        /// Processes attributes while preserving the original line breaks from the source XAML.
+        /// </summary>
+        private void ProcessAttributesWithOriginalLineBreaks(
+            StringBuilder output,
+            ElementProcessContext elementProcessContext,
+            List<AttributeInfo> attributeList,
+            string attributeIndentationString,
+            OriginalFormatInfo originalFormatInfo)
+        {
+            bool hasMultipleLines = originalFormatInfo.AttributeLineBreakIndices.Count > 0;
+
+            for (int i = 0; i < attributeList.Count; i++)
+            {
+                var attrInfo = attributeList[i];
+                bool shouldLineBreak = originalFormatInfo.AttributeLineBreakIndices.Contains(i);
+
+                if (shouldLineBreak)
+                {
+                    // Put this attribute on a new line
+                    output.Append(Environment.NewLine)
+                        .Append(this.indentService.Normalize(attributeIndentationString))
+                        .Append(this.attributeInfoFormatter.ToSingleLineString(attrInfo, xamlLanguageOptions));
+                }
+                else
+                {
+                    // Put this attribute on the same line
+                    output.Append(' ').Append(this.attributeInfoFormatter.ToSingleLineString(attrInfo, xamlLanguageOptions));
+                }
+            }
+
+            elementProcessContext.Current.IsMultlineStartTag = hasMultipleLines;
         }
     }
 }
