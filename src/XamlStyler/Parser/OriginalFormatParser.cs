@@ -2,9 +2,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Text.RegularExpressions;
-using System.Xml;
 
 namespace Xavalon.XamlStyler.Parser
 {
@@ -13,22 +10,31 @@ namespace Xavalon.XamlStyler.Parser
     /// </summary>
     public class OriginalFormatParser
     {
-        private readonly Dictionary<string, Queue<OriginalFormatInfo>> elementFormatInfos;
+        private readonly Dictionary<string, Queue<OriginalFormatInfo>> elementFormatInfosByPath;
+        private readonly Dictionary<string, Queue<OriginalFormatInfo>> elementFormatInfosByName;
 
         public OriginalFormatParser(string xamlSource)
         {
-            this.elementFormatInfos = new Dictionary<string, Queue<OriginalFormatInfo>>(StringComparer.Ordinal);
+            this.elementFormatInfosByPath = new Dictionary<string, Queue<OriginalFormatInfo>>(StringComparer.Ordinal);
+            this.elementFormatInfosByName = new Dictionary<string, Queue<OriginalFormatInfo>>(StringComparer.Ordinal);
             this.ParseOriginalFormat(xamlSource);
         }
 
         /// <summary>
         /// Gets the next format info for the specified element name.
         /// </summary>
-        public OriginalFormatInfo GetNextFormatInfo(string elementName)
+        public OriginalFormatInfo GetNextFormatInfo(string elementName, string pathKey)
         {
-            if (this.elementFormatInfos.TryGetValue(elementName, out var queue) && queue.Count > 0)
+            if (!string.IsNullOrEmpty(pathKey)
+                && this.elementFormatInfosByPath.TryGetValue(pathKey, out var pathQueue)
+                && pathQueue.Count > 0)
             {
-                return queue.Dequeue();
+                return pathQueue.Dequeue();
+            }
+
+            if (this.elementFormatInfosByName.TryGetValue(elementName, out var nameQueue) && nameQueue.Count > 0)
+            {
+                return nameQueue.Dequeue();
             }
 
             return null;
@@ -36,102 +42,279 @@ namespace Xavalon.XamlStyler.Parser
 
         private void ParseOriginalFormat(string xamlSource)
         {
-            try
-            {
-                using (var reader = new StringReader(xamlSource))
-                {
-                    var settings = new XmlReaderSettings
-                    {
-                        IgnoreComments = false,
-                        IgnoreProcessingInstructions = false,
-                        IgnoreWhitespace = false
-                    };
-
-                    using (var xmlReader = XmlReader.Create(reader, settings))
-                    {
-                        // We need to track positions in the original source
-                        // XmlReader with IXmlLineInfo can give us line/column info
-                        var lineInfo = xmlReader as IXmlLineInfo;
-
-                        while (xmlReader.Read())
-                        {
-                            if (xmlReader.NodeType == XmlNodeType.Element)
-                            {
-                                var formatInfo = this.ParseElementFormatInfo(xmlReader, lineInfo, xamlSource);
-                                this.AddFormatInfo(formatInfo);
-                            }
-                        }
-                    }
-                }
-            }
-            catch (XmlException)
-            {
-                // If parsing fails, we'll just have no format info
-            }
-        }
-
-        private OriginalFormatInfo ParseElementFormatInfo(XmlReader xmlReader, IXmlLineInfo lineInfo, string xamlSource)
-        {
-            var formatInfo = new OriginalFormatInfo
-            {
-                ElementName = xmlReader.Name,
-                IsSelfClosing = xmlReader.IsEmptyElement,
-                AttributeCount = xmlReader.AttributeCount
-            };
-
-            if (lineInfo != null && lineInfo.HasLineInfo())
-            {
-                formatInfo.StartLine = lineInfo.LineNumber;
-                formatInfo.StartColumn = lineInfo.LinePosition;
-            }
-
-            // Parse attribute line breaks from the original source
-            if (xmlReader.HasAttributes)
-            {
-                this.ParseAttributeLineBreaks(xmlReader, lineInfo, formatInfo);
-            }
-
-            return formatInfo;
-        }
-
-        private void ParseAttributeLineBreaks(XmlReader xmlReader, IXmlLineInfo lineInfo, OriginalFormatInfo formatInfo)
-        {
-            if (lineInfo == null || !lineInfo.HasLineInfo())
+            if (string.IsNullOrEmpty(xamlSource))
             {
                 return;
             }
 
-            int elementLine = formatInfo.StartLine;
-            int previousAttributeLine = elementLine;
+            var pathStack = new Stack<string>();
+            int index = 0;
+
+            while (index < xamlSource.Length)
+            {
+                if (xamlSource[index] != '<')
+                {
+                    index++;
+                    continue;
+                }
+
+                if (this.StartsWith(xamlSource, index, "<!--"))
+                {
+                    index = this.SkipUntil(xamlSource, index + 4, "-->");
+                    continue;
+                }
+
+                if (this.StartsWith(xamlSource, index, "<?"))
+                {
+                    index = this.SkipUntil(xamlSource, index + 2, "?>");
+                    continue;
+                }
+
+                if (this.StartsWith(xamlSource, index, "<![CDATA["))
+                {
+                    index = this.SkipUntil(xamlSource, index + 9, "]]>" );
+                    continue;
+                }
+
+                if (this.StartsWith(xamlSource, index, "<!DOCTYPE"))
+                {
+                    index = this.SkipToChar(xamlSource, index + 9, '>') + 1;
+                    continue;
+                }
+
+                if (this.StartsWith(xamlSource, index, "</"))
+                {
+                    index += 2;
+                    this.ReadName(xamlSource, ref index);
+
+                    if (pathStack.Count > 0)
+                    {
+                        pathStack.Pop();
+                    }
+
+                    index = this.SkipToChar(xamlSource, index, '>') + 1;
+                    continue;
+                }
+
+                if (index + 1 < xamlSource.Length && xamlSource[index + 1] == '!')
+                {
+                    index = this.SkipToChar(xamlSource, index + 2, '>') + 1;
+                    continue;
+                }
+
+                // Start tag
+                index++;
+                string elementName = this.ReadName(xamlSource, ref index);
+                if (string.IsNullOrEmpty(elementName))
+                {
+                    continue;
+                }
+
+                string currentPathKey = pathStack.Count == 0
+                    ? elementName
+                    : $"{pathStack.Peek()}/{elementName}";
+
+                var formatInfo = new OriginalFormatInfo
+                {
+                    ElementName = elementName
+                };
+
+                this.ParseAttributesAndTagEnd(xamlSource, ref index, formatInfo, out bool isSelfClosing);
+                formatInfo.IsSelfClosing = isSelfClosing;
+
+                this.AddFormatInfo(formatInfo, currentPathKey, elementName);
+
+                if (!isSelfClosing)
+                {
+                    pathStack.Push(currentPathKey);
+                }
+            }
+        }
+
+        private void ParseAttributesAndTagEnd(string source, ref int index, OriginalFormatInfo formatInfo, out bool isSelfClosing)
+        {
+            isSelfClosing = false;
+            bool sawLineBreak = false;
             int attributeIndex = 0;
 
-            while (xmlReader.MoveToNextAttribute())
+            while (index < source.Length)
             {
-                int currentLine = lineInfo.LineNumber;
+                this.SkipWhitespace(source, ref index, ref sawLineBreak);
 
-                // If this attribute is on a different line than the previous one (or the element for first attr)
-                if (currentLine > previousAttributeLine)
+                if (index >= source.Length)
+                {
+                    break;
+                }
+
+                if (source[index] == '>')
+                {
+                    index++;
+                    break;
+                }
+
+                if (source[index] == '/' && (index + 1 < source.Length) && source[index + 1] == '>')
+                {
+                    isSelfClosing = true;
+                    index += 2;
+                    break;
+                }
+
+                string attributeName = this.ReadName(source, ref index);
+                if (string.IsNullOrEmpty(attributeName))
+                {
+                    index++;
+                    continue;
+                }
+
+                if (sawLineBreak)
                 {
                     formatInfo.AttributeLineBreakIndices.Add(attributeIndex);
                 }
 
-                previousAttributeLine = currentLine;
                 attributeIndex++;
+                sawLineBreak = false;
+
+                this.SkipWhitespace(source, ref index, ref sawLineBreak);
+
+                if (index < source.Length && source[index] == '=')
+                {
+                    index++;
+                }
+
+                this.SkipWhitespace(source, ref index, ref sawLineBreak);
+
+                if (index < source.Length && (source[index] == '"' || source[index] == '\''))
+                {
+                    char quote = source[index];
+                    index++;
+                    while (index < source.Length && source[index] != quote)
+                    {
+                        index++;
+                    }
+
+                    if (index < source.Length)
+                    {
+                        index++;
+                    }
+                }
+                else
+                {
+                    while (index < source.Length && !char.IsWhiteSpace(source[index]) && source[index] != '>' && source[index] != '/')
+                    {
+                        index++;
+                    }
+                }
             }
 
-            // Move back to element
-            xmlReader.MoveToElement();
+            formatInfo.AttributeCount = attributeIndex;
         }
 
-        private void AddFormatInfo(OriginalFormatInfo formatInfo)
+        private void AddFormatInfo(OriginalFormatInfo formatInfo, string pathKey, string elementName)
         {
-            if (!this.elementFormatInfos.TryGetValue(formatInfo.ElementName, out var queue))
+            if (!string.IsNullOrEmpty(pathKey))
             {
-                queue = new Queue<OriginalFormatInfo>();
-                this.elementFormatInfos[formatInfo.ElementName] = queue;
+                if (!this.elementFormatInfosByPath.TryGetValue(pathKey, out var pathQueue))
+                {
+                    pathQueue = new Queue<OriginalFormatInfo>();
+                    this.elementFormatInfosByPath[pathKey] = pathQueue;
+                }
+
+                pathQueue.Enqueue(formatInfo);
             }
 
-            queue.Enqueue(formatInfo);
+            if (!this.elementFormatInfosByName.TryGetValue(elementName, out var nameQueue))
+            {
+                nameQueue = new Queue<OriginalFormatInfo>();
+                this.elementFormatInfosByName[elementName] = nameQueue;
+            }
+
+            nameQueue.Enqueue(formatInfo);
+        }
+
+        private void SkipWhitespace(string source, ref int index, ref bool sawLineBreak)
+        {
+            while (index < source.Length && char.IsWhiteSpace(source[index]))
+            {
+                if (source[index] == '\r' || source[index] == '\n')
+                {
+                    sawLineBreak = true;
+
+                    if (source[index] == '\r' && (index + 1 < source.Length) && source[index + 1] == '\n')
+                    {
+                        index++;
+                    }
+                }
+
+                index++;
+            }
+        }
+
+        private string ReadName(string source, ref int index)
+        {
+            int start = index;
+
+            while (index < source.Length)
+            {
+                char c = source[index];
+                if (char.IsWhiteSpace(c) || c == '>' || c == '/' || c == '=' || c == '?')
+                {
+                    break;
+                }
+
+                index++;
+            }
+
+            if (index == start)
+            {
+                return string.Empty;
+            }
+
+            return source.Substring(start, index - start);
+        }
+
+        private bool StartsWith(string source, int index, string value)
+        {
+            if (index + value.Length > source.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (source[index + i] != value[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private int SkipUntil(string source, int index, string token)
+        {
+            int tokenLength = token.Length;
+
+            while (index + tokenLength <= source.Length)
+            {
+                if (this.StartsWith(source, index, token))
+                {
+                    return index + tokenLength;
+                }
+
+                index++;
+            }
+
+            return source.Length;
+        }
+
+        private int SkipToChar(string source, int index, char target)
+        {
+            while (index < source.Length && source[index] != target)
+            {
+                index++;
+            }
+
+            return index;
         }
     }
 }

@@ -34,32 +34,61 @@ namespace Xavalon.XamlStyler.DocumentProcessors
             {
                 output.Append("</").Append(xmlReader.Name).Append(">");
             }
-            else if ((elementProcessContext.Current.ContentType == ContentTypes.None)
-                && this.options.RemoveEndingTagOfEmptyElement
-                && !this.options.KeepOriginalElementFormat)
+            else if (elementProcessContext.Current.ContentType == ContentTypes.None)
             {
-                // Shrink the current element, if it has no content.
-                // E.g., <Element>  </Element> => <Element />
-                // Skip this if KeepOriginalElementFormat is enabled to preserve the original style.
-                output = output.TrimEnd(' ', '\t', '\r', '\n');
+                var originalFormatInfo = elementProcessContext.Current.OriginalFormatInfo;
 
-                int bracketIndex = output.LastIndexOf('>');
-                output.Insert(bracketIndex, '/');
-
-                if ((output[bracketIndex - 1] != '\t') 
-                    && (output[bracketIndex - 1] != ' ')
-                    && this.options.SpaceBeforeClosingSlash)
+                if (this.options.KeepOriginalElementFormat && originalFormatInfo != null)
                 {
-                    output.Insert(bracketIndex, ' ');
+                    if (originalFormatInfo.IsSelfClosing)
+                    {
+                        // Preserve original self-closing elements.
+                        output = output.TrimEnd(' ', '\t', '\r', '\n');
+
+                        int bracketIndex = output.LastIndexOf('>');
+                        output.Insert(bracketIndex, '/');
+
+                        if ((output[bracketIndex - 1] != '\t')
+                            && (output[bracketIndex - 1] != ' ')
+                            && this.options.SpaceBeforeClosingSlash)
+                        {
+                            output.Insert(bracketIndex, ' ');
+                        }
+                    }
+                    else
+                    {
+                        // Preserve original explicit end tags.
+                        output = output.TrimEnd(' ', '\t', '\r', '\n');
+                        output.Append("</").Append(xmlReader.Name).Append(">");
+                    }
                 }
-            }
-            else if ((elementProcessContext.Current.ContentType == ContentTypes.None)
-                && this.options.KeepOriginalElementFormat)
-            {
-                // Keep original element format: preserve the end tag for elements that originally had end tags.
-                // E.g., <Element></Element> stays as <Element></Element>
-                output = output.TrimEnd(' ', '\t', '\r', '\n');
-                output.Append("</").Append(xmlReader.Name).Append(">");
+                else if (this.options.RemoveEndingTagOfEmptyElement)
+                {
+                    // Shrink the current element, if it has no content.
+                    // E.g., <Element>  </Element> => <Element />
+                    output = output.TrimEnd(' ', '\t', '\r', '\n');
+
+                    int bracketIndex = output.LastIndexOf('>');
+                    output.Insert(bracketIndex, '/');
+
+                    if ((output[bracketIndex - 1] != '\t')
+                        && (output[bracketIndex - 1] != ' ')
+                        && this.options.SpaceBeforeClosingSlash)
+                    {
+                        output.Insert(bracketIndex, ' ');
+                    }
+                }
+                else
+                {
+                    string currentIndentString = this.indentService.GetIndentString(xmlReader.Depth);
+
+                    if (!output.IsNewLine())
+                    {
+                        output.Append(Environment.NewLine);
+                    }
+
+                    output.Append(currentIndentString).Append("</").Append(xmlReader.Name).Append(">");
+                }
             }
             else if ((elementProcessContext.Current.ContentType == ContentTypes.SingleLineTextOnly)
                 && !elementProcessContext.Current.IsMultlineStartTag)

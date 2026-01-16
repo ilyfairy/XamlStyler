@@ -52,11 +52,14 @@ namespace Xavalon.XamlStyler.DocumentProcessors
 
             var elementName = xmlReader.Name;
 
+            var parentPathKey = elementProcessContext.Current.PathKey;
+            var pathKey = string.IsNullOrEmpty(parentPathKey) ? elementName : $"{parentPathKey}/{elementName}";
+
             // Get original format info if available
             OriginalFormatInfo originalFormatInfo = null;
             if (elementProcessContext.OriginalFormatParser != null)
             {
-                originalFormatInfo = elementProcessContext.OriginalFormatParser.GetNextFormatInfo(elementName);
+                originalFormatInfo = elementProcessContext.OriginalFormatParser.GetNextFormatInfo(elementName, pathKey);
             }
 
             elementProcessContext.Push(
@@ -64,6 +67,7 @@ namespace Xavalon.XamlStyler.DocumentProcessors
                 {
                     Parent = elementProcessContext.Current,
                     Name = elementName,
+                    PathKey = pathKey,
                     ContentType = ContentTypes.None,
                     IsMultlineStartTag = false,
                     IsPreservingSpace = elementProcessContext.Current.IsPreservingSpace,
@@ -176,7 +180,8 @@ namespace Xavalon.XamlStyler.DocumentProcessors
                 }
             }
 
-            // If KeepOriginalAttributeLineBreaks is enabled and we have original format info, use it
+            // If KeepOriginalAttributeLineBreaks is enabled and we have original format info, use it.
+            // This preserves original line breaks and bypasses attribute reordering.
             if (this.options.KeepOriginalAttributeLineBreaks && originalFormatInfo != null)
             {
                 this.ProcessAttributesWithOriginalLineBreaks(output, elementProcessContext, list, attributeIndentationString, originalFormatInfo);
